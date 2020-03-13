@@ -23,22 +23,6 @@ char inputbuf[3];
 char zone1_mailbox;
 
 /*
- * Check a received message for parity error.
- * returns 0 if no parity error, -1 otherwise.
- */
-int checkparity_err(char *msg) {
-  if(msg == NULL) {
-    return 0;
-  }
-  if(msg[0] == '\377') {
-    return -1;
-  }
-  else {
-    return 0;
-  }
-}
-
-/*
  * Loop and send until the command has been received properly.
  */
 void *zone1_sendcmd(void) {

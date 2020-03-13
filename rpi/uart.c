@@ -45,7 +45,10 @@ int get_uartfd() {
  * returns -1 if a parity error occured, 0 otherwise.
  */
 int check_parity_error(char msg[]) {
-  if(msg[1] == '\377' && msg[2] == '\377') {
+  if(msg == NULL) {
+    return 0;
+  }
+  if(msg[0] == '\377') {
     return -1;
   }
   else {
