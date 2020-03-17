@@ -28,11 +28,11 @@ enum zone1_rules {FAN50, FAN62_5, FAN75, FAN87_5, FAN100};
 #define RULE_CHK_FREQ 1
 /* Zone 1 command codes */
 #define Z1FAN50 "0"
-#define Z1FAN62_5 "a"
+#define Z1FAN62_5 "1"
 #define Z1FAN75 "2"
 #define Z1FAN87_5 "3"
 #define Z1FAN100 "4"
 /* Number of zone 1 tasks for multithreading. */
-#define Z1NUM_TASKS 2
+#define Z1NUM_TASKS 3
 
 #endif /*MODBUS_RCVR_H__*/

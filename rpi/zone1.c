@@ -1,6 +1,7 @@
 /* Local headers */
 #include "zone1.h"
 #include "uart.h"
+#include "doors.h"
 /* Standard headers */
 #include <stdio.h>
 #include <stdlib.h> /* For EXIT_FAILURE & EXIT_SUCCESS */
@@ -13,9 +14,10 @@
 #include <modbus.h>
 
 /* Globals */
-modbus_t *mb;
+modbus_t *mb_fan;
+modbus_t *mb_door;
 int uartfd;
-char rand1, rand2;
+//char rand1, rand2;
 /* Needs 3 bytes for checking parity errors. */
 char inputbuf[3];
 /* The zone1 command sender reads this mailbox and sends the appropriate */
@@ -26,13 +28,15 @@ char zone1_mailbox;
  * Loop and send until the command has been received properly.
  */
 void *zone1_sendcmd(void) {
-  printf("got to sendcmd\n");
+  int currentcmd;
   char response = '\0';
   struct pollfd fds;
   fds.fd = uartfd;
   fds.events = POLLIN;
   while(1) {
-    while(response != 'z' && zone1_mailbox < NUM_RULES) {
+    while(response != 'z' || zone1_mailbox != currentcmd) {
+      currentcmd = zone1_mailbox;
+      //printf("sending %c\n", zone1_mailbox);
       write(uartfd, &zone1_mailbox, sizeof(char));
       if(-1 == poll(&fds, 1, 1)) {
         perror("poll(): ");
@@ -63,6 +67,7 @@ void *poll_zone1(const void *args) {
   }
   uint16_t rc, i, j;
   uint16_t *dest = malloc(sizeof(uint16_t));
+  printf("poll_zone1 dest addr %p, i addr %p\n", dest, &i);
   struct pollarg pa = *((struct pollarg *)(args));
   j = pa.high - pa.low;
   if(pa.high < pa.low) {
@@ -77,15 +82,15 @@ void *poll_zone1(const void *args) {
   }
   while(1) {
 /* TEMP: rand1 and rand2 are for testing. */
-    rand1 = (char)(48+rand()%5);
-    rand2 = (char)(53+rand()%5);
-    printf("rand1: %c, rand2: %c\n", rand1, rand2);
+//    rand1 = (char)(48+rand()%5);
+//    rand2 = (char)(53+rand()%5);
+//    printf("rand1: %c, rand2: %c\n", rand1, rand2);
 /* Reset the counter when j wraps around to 2^16-1(e.g 5,4,3,2,1,0,65536) */
     if(j > NUM_RULES) {
       j = pa.high - pa.low;
     }
 /* Tell the slave (ICA) to read the jth holding register to dest. */
-    if(-1 == (rc = modbus_read_registers(mb,j,1, dest))) {
+    if(-1 == (rc = modbus_read_registers(mb_fan,j,1, dest))) {
       fprintf(stderr, "zone1 modbus_read_failed: %s\n", modbus_strerror(errno));
       return NULL;
     }
@@ -113,7 +118,8 @@ void *poll_zone1(const void *args) {
       for(i = 0; i < rc; i++) {
         if(dest[i] != 0) {
           printf("FAN75: reg[%d]=%u (0x%X)\n", i, *dest, *dest);
-          write(uartfd, Z1FAN75, sizeof(char));
+          //write(uartfd, Z1FAN75, sizeof(char));
+          zone1_mailbox = FAN75;
           j = pa.high - pa.low;
 	      }
       }
@@ -164,8 +170,8 @@ int main() {
 /* and then change only the flags you want by bitwise OR'ing them into */
 /* each flag member of the struct termios. */
   tcgetattr(uartfd, &term);
-/* Enable even parity checking */
-  term.c_cflag |= PARENB;
+/* Enable odd parity checking. Could not get even parity to work. */
+  term.c_cflag |= PARODD;
 /* If there is a parity error, prefix \377 (or (char)-1 and a null byte */
 /* (\000). */
   term.c_iflag |= PARMRK;
@@ -177,17 +183,23 @@ int main() {
 /* Push these new configurations to the UART driver immediately*/
   tcsetattr(uartfd, TCSANOW, &term);
 
-  mb = modbus_new_tcp(MODBUS_SERV_IP, MODBUS_PORT);
-  if(-1 == modbus_connect(mb)) {
+  mb_fan = modbus_new_tcp(MODBUS_SERV_IP, MODBUS_PORT);
+  mb_door = modbus_new_tcp(MODBUS_SERV_IP, MODBUS_PORT);
+  if(-1 == modbus_connect(mb_fan)) {
     fprintf(stderr, "Connection failed: %s\n", modbus_strerror(errno));
-    modbus_free(mb);
+    modbus_free(mb_fan);
+    return -1;
+  }
+  if(-1 == modbus_connect(mb_door)) {
+    fprintf(stderr, "Connection failed: %s\n", modbus_strerror(errno));
+    modbus_free(mb_door);
     return -1;
   }
 
   struct pollarg z1 = {4, 0};
 /* Array of thread IDs */
   pthread_t tid[Z1NUM_TASKS];
-  void *tasks[Z1NUM_TASKS] = {poll_zone1, zone1_sendcmd};
+  void *tasks[Z1NUM_TASKS] = {poll_zone1, zone1_sendcmd, door_control};
   int retval;
   int i;
   for(i = 0; i < Z1NUM_TASKS; i++) {
@@ -209,8 +221,10 @@ int main() {
     }
   }
 
-  modbus_close(mb);
+  modbus_close(mb_fan);
+  modbus_close(mb_door);
   close(uartfd);
-  modbus_free(mb);
+  modbus_free(mb_fan);
+  modbus_free(mb_door);
   return 0;
 }
