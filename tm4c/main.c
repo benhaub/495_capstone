@@ -27,7 +27,7 @@ void printString(char * string);
 char* readString(char delimiter);
 char c;
 char d;
-unsigned int uart_sel = 0; // if this is one, debug through usb, otherwise
+unsigned int uart_sel = 2; // if this is one, debug through usb, otherwise
 
 // PWM initialization is on page 1239 of the datasheet
 void init_gpio() {
@@ -185,6 +185,10 @@ void init_gpio() {
         // 2. Enable the clock to the appropriate GPIO module via the RCGCGPIO register (see page 340).  To find out which GPIO port to enable, refer to Table 23-5 on page 1351.
         SYSCTL_RCGCGPIO_R |= 0x8;
 
+        // unlock the port
+        GPIO_PORTD_LOCK_R = 0x4C4F434B;
+        GPIO_PORTD_CR_R |= 0x80; // might be wrong, check later if problems****************************************************************************************************************************8
+
         // 3. Set the GPIO AFSEL bits for the appropriate pins (see page 671). To determine which GPIOs to configure, see Table 23-4 on page 1344
         GPIO_PORTD_AFSEL_R |= 0xC0;
 
@@ -216,8 +220,8 @@ void init_gpio() {
         UART2_FBRD_R = 11;//44;//11;
 
         // 4. p.916:  Write the desired serial parameters to the UARTLCRH register (in this case, a value of 0x0000.0060)
-        UART2_LCRH_R = 0x70;//(0x3<<5)|(1<<4); // 8-bit, no parity, 1-stop bit
-    //    UART2_LCRH_R = 0x76; // 8-bit, parity enabled, even parity checking, 1-stop bit
+//        UART2_LCRH_R = 0x72;//(0x3<<5)|(1<<4); // 8-bit, odd parity, 1-stop bit
+        UART2_LCRH_R = 0x76; // 8-bit, parity enabled, even parity checking, 1-stop bit
 
         // 5. Configure the UART clock source by writing to the UARTCC register
         UART2_CC_R = 0x0;
@@ -270,6 +274,50 @@ void init_gpio() {
 
         // 7. Enable the UART by setting the UARTEN bit in the UARTCTL register.
         UART0_CTL_R = (1<<0)|(1<<8)|(1<<9);
+    }
+    else if (uart_sel == 2) {
+        // 1. Enable the UART module using the RCGCUART register (see page 344).
+        SYSCTL_RCGCUART_R |= 0x2;
+
+        // 2. Enable the clock to the appropriate GPIO module via the RCGCGPIO register (see page 340).  To find out which GPIO port to enable, refer to Table 23-5 on page 1351.
+        SYSCTL_RCGCGPIO_R |= 0x2;
+
+        // 3. Set the GPIO AFSEL bits for the appropriate pins (see page 671). To determine which GPIOs to configure, see Table 23-4 on page 1344
+        GPIO_PORTB_AFSEL_R |= (1<<1)|(1<<0);
+
+        // 4. Configure the GPIO current level and/or slew rate as specified for the mode selected.  See page 673 and page 681
+
+        // 5. Configure the PMCn fields in the GPIOPCTL register to assign the UART signals to the appropriate pins (see page 688 and Table 23-5 on page 1351).
+        GPIO_PORTB_PCTL_R |= (1<<0)|(1<<4);
+
+        GPIO_PORTB_DEN_R |= (1<<0)|(1<<1);
+
+        // Find  the Baud-Rate Divisor
+        // BRD = 16,000,000 / (16 * 9600) = 104.1666666666666666
+        // UART_FBRD[DIVFRAC] = integer(0.166667 * 64 + 0.5) = 11
+
+
+        // With the BRD values in hand, the UART configuration is written to the module in the following order
+
+        // 1. Disable the UART by clearing the UARTEN bit in the UARTCTL register
+        UART1_CTL_R &= ~(1<<0);
+
+        // 2. Write the integer portion of the BRD to the UARTIBRD register
+        UART1_IBRD_R = 104;
+
+        // 3. Write the fractional portion of the BRD to the UARTFBRD register.
+        UART1_FBRD_R = 11;
+
+        // 4. Write the desired serial parameters to the UARTLCRH register (in this case, a value of 0x0000.0060)
+        UART1_LCRH_R = 0x76; // 8-bit, parity enabled, even parity checking, 1-stop bit
+
+        // 5. Configure the UART clock source by writing to the UARTCC register
+        UART1_CC_R = 0x0;
+
+        // 6. Optionally, configure the µDMA channel (see “Micro Direct Memory Access (µDMA)” on page 585) and enable the DMA option(s) in the UARTDMACTL register
+
+        // 7. Enable the UART by setting the UARTEN bit in the UARTCTL register.
+        UART1_CTL_R = (1<<0)|(1<<8)|(1<<9);
     }
 }
 
@@ -340,6 +388,10 @@ char readChar(void)
         while((UART0_FR_R & (1<<4)) != 0);
         c = UART0_DR_R;
     }
+    else if (uart_sel == 2) {
+        while((UART1_FR_R & (1<<4)) != 0);
+        c = UART1_DR_R;
+    }
     return c;
 }
 
@@ -353,6 +405,10 @@ void printChar(char c)
     else if (uart_sel == 1) {
         while((UART0_FR_R & (1<<5)) != 0);
         UART0_DR_R = c;
+    }
+    else if (uart_sel == 2) {
+        while((UART1_FR_R & (1<<5)) != 0);
+        UART1_DR_R = c;
     }
 }
 
@@ -495,11 +551,26 @@ int main(void) {
 //        PWM0_3_CMPA_R = 0x17E0 - (ADC_read_3 >> 2);
 //        delay_us(100);
 
+
+        printChar('z');
+
+///*
 // if no error, send lowercase z
-//        if ((UART2_RIS_R & 0x78) == 0x00) {
-//            printChar('z');
+        if ((UART1_RIS_R & 0x180) == 0x00) {
+            printChar('z');
 //            UART2_ICR_R |= 0x780;
-//        }
+        }
+        else {
+//                        printChar('z');
+//            d = '7';
+//            c = 'A';
+            UART1_ICR_R |= 0x180; // was 0x780, can switch later after confirming it works
+        }
+//*/
+
+
+
+
 
 //        printChar(d);
 //        printChar(c);
