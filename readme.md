@@ -1,6 +1,6 @@
-######CME 495 Capstone Project
+###### CME 495 Capstone Project
 ## Anemoi Design Group
-#Boreas Control Platform on behalf of MST Global
+# Boreas Control Platform on behalf of MST Global
 
 The Boreas Control Platform is an automated system designed to remotely control fans and doors within an underground mining operating.
 
