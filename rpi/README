@@ -50,7 +50,7 @@ FUTURE WORK
   More zones need to be implemented. The general flow would be the same as
   zone1, but check rules held in different modbus registers.
 
-  The integer variable i has been witness to become larger than the integer
-  variable rc after the program has been running for an extended duration of
-  time. This causes it to check the dest array in indeces that are beyond it's
-  memory allocation.
+  The integer variable i has been observed to become larger than the integer
+  variable rc in the function poll_zone1 after the program has been running for
+  an extended duration of time. This causes it to check the dest array in
+  indeces that are beyond it's allocated memory.
