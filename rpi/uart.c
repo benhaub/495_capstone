@@ -1,3 +1,8 @@
+/**************************************************************************
+ * Authour : Ben Haubrich                                                 *
+ * File    : uart.c                                                       *
+ * Synopsis: uart control for raspberrypi 4                               *
+ * ************************************************************************/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
