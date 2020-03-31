@@ -40,9 +40,9 @@ FUNCTIONS
     changes.
 
 FUTURE WORK
-  The 'z' acknowledgement from the end point only acknowledges a transmission
-  without parity error. Further iterations should introduce acknowledgement of
-  door and fan actuation.
+  The 'z' acknowledgement from the end point of the uart communication only
+  acknowledges a transmission without parity error. Further iterations should
+  introduce acknowledgement of door and fan actuation.
 
   A real time kernel should be used instead of pthreads to guarentee certain
   amounts of latency.
