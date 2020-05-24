@@ -1,0 +1,9 @@
+Need to test fans
+Send two characters per rule
+Have kelsey acknowledge only after both chars send correctly
+Can I send two characters at the same time or do the need to be sent one
+after the other
+Buffer cmds in case the first one fails
+Change zone1_mailbox to zone1_mailbox[2] and send each char with two
+write() calls.
+What are the door commands for each door?

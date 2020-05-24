@@ -1,3 +1,8 @@
+/**************************************************************************
+ * Authour : Ben Haubrich                                                 *
+ * File    : doors.h                                                      *
+ * Synopsis: door control for EE/CME MST Capstone Design Project          *
+ * ************************************************************************/
 #ifndef __DOORS_H__
 
 /* Door Rules */

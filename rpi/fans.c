@@ -1,5 +1,10 @@
+/**************************************************************************
+ * Authour : Ben Haubrich                                                 *
+ * File    : fans.c                                                       *
+ * Synopsis: fan control for EE/CME MST Capstone Design Project           *
+ * ************************************************************************/
 /* Local headers */
-#include "zone1.h"
+#include "fans.h"
 #include "uart.h"
 #include "doors.h"
 /* Standard headers */
@@ -20,30 +25,73 @@ int uartfd;
 //char rand1, rand2;
 /* Needs 3 bytes for checking parity errors. */
 char inputbuf[3];
-/* The zone1 command sender reads this mailbox and sends the appropriate */
-/* command to the control system. */
-char zone1_mailbox;
+/* The fans command sender reads this mailbox and sends the appropriate */
+/* command to The control system. */
+struct mailbox {
+  int rule;
+  int fan;
+}fans_mailbox;
+
+/*
+ * Converts a rule to the corresponding command.
+ * param fan
+ *   The fan number (1 through 5)
+ * param rule
+ *   The rule to send
+ * returns the command than can be sent through the UART.
+ */
+char *rule_to_cmd(int fan, int rule) {
+  switch(fan) {
+    case(1):
+    if(FAN50 == rule) {
+      return F1FAN50;
+    }
+    else if(FAN62_5 == rule) {
+      return F1FAN62_5;
+    }
+    else if(FAN75 == rule) {
+      return F1FAN75;
+    }
+    else if(FAN87_5 == rule) {
+      return F1FAN87_5;
+    }
+    else {
+      return F1FAN100;
+    }
+  }
+  return NULL; /* temporary */
+}
 
 /*
  * Loop and send until the command has been received properly.
  */
-void *zone1_sendcmd(void) {
-  int currentcmd;
+void *fans_sendcmd(void) {
+/* The current rule being enforced by ICA. */
+  int currentrule;
+/* The command to send. */
+  char *cmd;
   char response = '\0';
   struct pollfd fds;
   fds.fd = uartfd;
   fds.events = POLLIN;
   while(1) {
-    while(response != 'z' || zone1_mailbox != currentcmd) {
-      currentcmd = zone1_mailbox;
-      //printf("sending %c\n", zone1_mailbox);
-      write(uartfd, &zone1_mailbox, sizeof(char));
+    while((response != 'z' || fans_mailbox.rule != currentrule) &&
+                                      fans_mailbox.rule <= NUM_FAN_RULES) {
+      currentrule = fans_mailbox.rule;
+      printf("currentrule %d\n", currentrule);
+      cmd = rule_to_cmd(fans_mailbox.fan, currentrule);
+      printf("Sending fan cmd: %s\n", cmd);
+      write(uartfd, cmd, sizeof(char));
+      usleep(10000);
+      write(uartfd, cmd+1, sizeof(char));
       if(-1 == poll(&fds, 1, 1)) {
         perror("poll(): ");
       }
       if(POLLIN == fds.revents) {
         read(uartfd, &response, sizeof(char));
+        printf("response: %c\n", response);
       }
+    sleep(RULE_CHK_FREQ);
     }
   }
   return NULL;
@@ -51,7 +99,7 @@ void *zone1_sendcmd(void) {
   
 
 /*
- * Poll the modbus registers for zone1. The higher the address of the
+ * Poll the modbus registers for fans. The higher the address of the
  * register, the more important. It will override lower registers if both
  * are true at the same time.
  * Takes 1 parameter: a struct pollarg.
@@ -59,25 +107,30 @@ void *zone1_sendcmd(void) {
  * given. It goes backwards through the enum of rules and checks each one
  * to see if the modbus register is true or false. The modbus register
  * numbers are obtained from the ICA modbus server.
+ * Zone1 includes:
+ *   Fan1
+ * Zone2 includes:
+ *   Fan2
+ * Zone3 includes:
+ *   Fan3
  */
-void *poll_zone1(const void *args) {
+void *poll_fan1(const void *args) {
   if(NULL == args) {
-    fprintf(stderr, "zone1 poller given null args. Closing\n");
+    fprintf(stderr, "fans poller given null args. Closing\n");
     return NULL;
   }
   uint16_t rc, i, j;
   uint16_t *dest = malloc(sizeof(uint16_t));
-  printf("poll_zone1 dest addr %p, i addr %p\n", dest, &i);
   struct pollarg pa = *((struct pollarg *)(args));
   j = pa.high - pa.low;
   if(pa.high < pa.low) {
-    fprintf(stderr, "Invalid high and low registers given to zone1 poller."\
+    fprintf(stderr, "Invalid high and low registers given to fans poller."\
 		    " Closing\n");
     return NULL;
   }
-  if((pa.high - pa.low) > NUM_RULES) {
+  if((pa.high - pa.low) > NUM_FAN_RULES) {
     fprintf(stderr, "The number of rules to check is greater than the "\
-                    "number of rules defined. See zone1.h\n");
+                    "number of rules defined. See fans.h\n");
     return NULL;
   }
   while(1) {
@@ -86,12 +139,12 @@ void *poll_zone1(const void *args) {
 //    rand2 = (char)(53+rand()%5);
 //    printf("rand1: %c, rand2: %c\n", rand1, rand2);
 /* Reset the counter when j wraps around to 2^16-1(e.g 5,4,3,2,1,0,65536) */
-    if(j > NUM_RULES) {
+    if(j > NUM_FAN_RULES) {
       j = pa.high - pa.low;
     }
 /* Tell the slave (ICA) to read the jth holding register to dest. */
     if(-1 == (rc = modbus_read_registers(mb_fan,j,1, dest))) {
-      fprintf(stderr, "zone1 modbus_read_failed: %s\n", modbus_strerror(errno));
+      fprintf(stderr, "fans modbus_read_failed: %s\n", modbus_strerror(errno));
       return NULL;
     }
     if(FAN100 == j) {
@@ -99,7 +152,7 @@ void *poll_zone1(const void *args) {
         if(dest[i] != 0) {
           printf("FAN100: reg[%d]=%u (0x%X)\n", i, *dest, *dest);
 /* Write the op-code for this rule to the uart */
-          write(uartfd, Z1FAN100, sizeof(char));
+          write(uartfd, F1FAN100, sizeof(char));
 /* Reset j so that we only transmit one rule at a time. */
           j = pa.high - pa.low;
 	      }
@@ -109,7 +162,7 @@ void *poll_zone1(const void *args) {
       for(i = 0; i < rc; i++) {
         if(dest[i] != 0) {
           printf("FAN87_5: reg[%d]=%u (0x%X)\n", i, *dest, *dest);
-          write(uartfd, Z1FAN87_5, sizeof(char));
+          write(uartfd, F1FAN87_5, sizeof(char));
           j = pa.high - pa.low;
 	      }
       }
@@ -118,8 +171,9 @@ void *poll_zone1(const void *args) {
       for(i = 0; i < rc; i++) {
         if(dest[i] != 0) {
           printf("FAN75: reg[%d]=%u (0x%X)\n", i, *dest, *dest);
-          //write(uartfd, Z1FAN75, sizeof(char));
-          zone1_mailbox = FAN75;
+          //write(uartfd, F1FAN75, sizeof(char));
+          fans_mailbox.rule = FAN75;
+          fans_mailbox.fan = 1;
           j = pa.high - pa.low;
 	      }
       }
@@ -128,8 +182,9 @@ void *poll_zone1(const void *args) {
       for(i = 0; i < rc; i++) {
         if(dest[i] != 0) {
           printf("FAN62_5: reg[%d]=%u (0x%X)\n", i, *dest, *dest);
-          //write(uartfd, Z1FAN62_5, sizeof(char));
-          zone1_mailbox = FAN62_5;
+          //write(uartfd, F1FAN62_5, sizeof(char));
+          fans_mailbox.rule = FAN62_5;
+          fans_mailbox.fan = 1;
           j = pa.high - pa.low;
 	      }
       }
@@ -138,7 +193,9 @@ void *poll_zone1(const void *args) {
       for(i = 0; i < rc; i++) {
         if(dest[i] != 0) {
           printf("FAN50: reg[%d]=%u (0x%X)\n", i, *dest, *dest);
-          write(uartfd, Z1FAN50, sizeof(char));
+          //write(uartfd, F1FAN50, sizeof(char));
+          fans_mailbox.rule = FAN50;
+          fans_mailbox.fan = 1;
           j = pa.high - pa.low;
 	      }
       }
@@ -159,7 +216,7 @@ int main() {
   speed_t speed; /* Store the baud rate */
 
 /* Set the mailbox to an invalid state to start off with so that we don't *//* transmit before we have received a rule. */
-  zone1_mailbox = NUM_RULES+1;
+  fans_mailbox.rule = NUM_FAN_RULES+1;
 
 /* The way termios works is by providing a struct termios with a set of */
 /* flags. You can set the flags manually, or use the set and get */
@@ -170,8 +227,9 @@ int main() {
 /* and then change only the flags you want by bitwise OR'ing them into */
 /* each flag member of the struct termios. */
   tcgetattr(uartfd, &term);
-/* Enable odd parity checking. Could not get even parity to work. */
-  term.c_cflag |= PARODD;
+/* Enable even parity checking. */
+  term.c_cflag |= PARENB;
+  term.c_cflag &= ~PARODD;
 /* If there is a parity error, prefix \377 (or (char)-1 and a null byte */
 /* (\000). */
   term.c_iflag |= PARMRK;
@@ -180,6 +238,9 @@ int main() {
   if(speed != B9600) {
     cfsetospeed(&term, B9600);
   }
+/* Disable canonical mode so that special characters are not needed to */
+/* read from the UART FIFO. */
+  term.c_lflag &= ~ICANON;
 /* Push these new configurations to the UART driver immediately*/
   tcsetattr(uartfd, TCSANOW, &term);
 
@@ -198,11 +259,11 @@ int main() {
 
   struct pollarg z1 = {4, 0};
 /* Array of thread IDs */
-  pthread_t tid[Z1NUM_TASKS];
-  void *tasks[Z1NUM_TASKS] = {poll_zone1, zone1_sendcmd, door_control};
+  pthread_t tid[F1NUM_TASKS];
+  void *tasks[F1NUM_TASKS] = {poll_fan1, fans_sendcmd, door_control};
   int retval;
   int i;
-  for(i = 0; i < Z1NUM_TASKS; i++) {
+  for(i = 0; i < F1NUM_TASKS; i++) {
     retval = pthread_create(tid+i,
                             NULL, /* Default attributes */
                             tasks[i],
@@ -214,7 +275,7 @@ int main() {
     }
   }
 /* Stop the parent thread here and let the tasks run. If we don't do this *//* then the parent (main) will keep running, return 0, exit, and kill all *//* the threads. */
-  for(i = 0; i < Z1NUM_TASKS; i++) {
+  for(i = 0; i < F1NUM_TASKS; i++) {
     retval = pthread_join(tid[i], NULL);
     if(-1 == retval) {
       perror("Error while joining threads");
